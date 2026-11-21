@@ -7,6 +7,12 @@ Markdown self-check report derived from it.
 appear in the source, and where. It does not score, gate, certify, or decide whether
 anything "passes".
 
+This action is a wrapper around the [`cbom-tools`](https://www.npmjs.com/package/cbom-tools)
+npm package, pinned to version `0.3.1` by default; change it with the `version` input.
+Pinning is on purpose: two reports are only comparable when the same tool version
+produced them, and the report's wording and thresholds are part of this action's
+behaviour.
+
 ## Usage
 
 ```yaml
