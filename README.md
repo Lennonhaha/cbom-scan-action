@@ -1,5 +1,11 @@
 # CBOM inventory action
 
+[![cbom-tools on npm](https://badge.fury.io/js/cbom-tools.svg)](https://www.npmjs.com/package/cbom-tools)
+[![cbom-tools license](https://img.shields.io/npm/l/cbom-tools.svg)](https://github.com/Lennonhaha/fibemate-tools/blob/main/cbom-tools/LICENSE)
+
+The badge above is the npm package this action wraps. It is a static shield, not a live
+fetch from npm: a badge that goes blank when a third party is slow is worse than no badge.
+
 Produce a [CycloneDX](https://cyclonedx.org/capabilities/cbom/) CBOM for a repository, and a
 Markdown self-check report derived from it.
 
@@ -98,3 +104,9 @@ the meaning of a stored artifact.
 Apache-2.0. The tool it runs, [`cbom-tools`](https://www.npmjs.com/package/cbom-tools),
 is Apache-2.0 as well, with zero runtime dependencies and no network access at scan
 time.
+
+## Marketplace
+
+This action is published on the GitHub Marketplace as `CBOM inventory`. Publication is a
+checkbox in the release UI (GitHub has no API for it); the release notes and this README
+are the same text, so there is nothing to keep in sync beyond the tag.
