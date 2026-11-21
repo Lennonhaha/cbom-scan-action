@@ -1,0 +1,140 @@
+name: CBOM inventory
+description: Produce a CycloneDX CBOM for a repository and render a redacted self-check report. Inventory only - no score, no gate, no compliance verdict.
+
+author: FIBEMATE
+branding:
+  icon: shield
+  color: blue
+
+# Read this before wiring it into a required check.
+#
+# This action runs a static, name-level scan and writes two artifacts: a
+# CycloneDX 1.7 CBOM and a Markdown report derived from it. It does not
+# decide anything. There is deliberately no `fail-on` input: putting a
+# threshold on a name-matching report turns a checklist into a verdict, and
+# this report is known to contain false positives (prose, compound names,
+# KAT vectors). Whether a finding blocks a merge is a human decision.
+#
+# Every output can leave CI, so `redact` defaults to true: absolute paths are
+# replaced with <redacted>, relative paths and file names stay, which is what
+# a reviewer needs to open the file and does not leak the runner's layout.
+
+inputs:
+  path:
+    description: Directory to scan, relative to the workspace root.
+    required: false
+    default: "."
+  out-dir:
+    description: Where the CBOM, the report and the scan log are written.
+    required: false
+    default: "cbom-out"
+  redact:
+    description: Replace absolute paths with <redacted> in the report. Leave on for anything that leaves CI.
+    required: false
+    default: "true"
+  version:
+    description: cbom-tools version to run. Pin it; a report produced by a different tool version is not comparable.
+    required: false
+    default: "0.3.1"
+  node-version:
+    description: Node version used to run the tool.
+    required: false
+    default: "22"
+  upload-artifacts:
+    description: Upload the CBOM, the report and the scan log as workflow artifacts.
+    required: false
+    default: "true"
+
+outputs:
+  cbom-path:
+    description: Path to the generated CycloneDX CBOM.
+    value: ${{ steps.scan.outputs.cbom-path }}
+  report-path:
+    description: Path to the generated Markdown report.
+    value: ${{ steps.report.outputs.report-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        OUT_DIR: ${{ inputs.out-dir }}
+        TOOL_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$OUT_DIR"
+        npx --yes --package "cbom-tools@${TOOL_VERSION}" cbom-scan \
+          --dir "$SCAN_PATH" \
+          --out "$OUT_DIR/app.cbom.json" 2>"$OUT_DIR/scan.log"
+        echo "cbom-path=$OUT_DIR/app.cbom.json" >> "$GITHUB_OUTPUT"
+        # The scanner caps evidence at 50 occurrences per component and warns
+        # on stderr. Repetition is the warning: a truncated component reads as
+        # "at least 50", which is a different claim from "50".
+        if grep -q "occurrence cap" "$OUT_DIR/scan.log"; then
+          echo "::warning::cbom-scan truncated at least one component's evidence (cap 50). See scan.log."
+        fi
+
+    - name: Report
+      id: report
+      shell: bash
+      env:
+        OUT_DIR: ${{ inputs.out-dir }}
+        REDACT: ${{ inputs.redact }}
+        TOOL_VERSION: ${{ inputs.version }}
+        SCAN_PATH: ${{ inputs.path }}
+      run: |
+        set -euo pipefail
+        # Two spellings rather than an array: the empty-array idiom works on
+        # bash 4 and is easy to get wrong on an older shell.
+        if [ "$REDACT" = "true" ]; then
+          npx --yes --package "cbom-tools@${TOOL_VERSION}" cbom-compliance \
+            --bom "$OUT_DIR/app.cbom.json" \
+            --dir "$SCAN_PATH" \
+            --out "$OUT_DIR/self-check.md" \
+            --redact
+        else
+          npx --yes --package "cbom-tools@${TOOL_VERSION}" cbom-compliance \
+            --bom "$OUT_DIR/app.cbom.json" \
+            --dir "$SCAN_PATH" \
+            --out "$OUT_DIR/self-check.md"
+        fi
+        echo "report-path=$OUT_DIR/self-check.md" >> "$GITHUB_OUTPUT"
+
+    - name: Job summary
+      shell: bash
+      env:
+        OUT_DIR: ${{ inputs.out-dir }}
+      run: |
+        set -euo pipefail
+        {
+          echo "## CBOM self-check"
+          echo
+          echo "Static, name-level inventory. Not an assessment, no score, and not"
+          echo "evidence of compliance."
+          echo
+          # Header, boundary section and the three judgements live in the first
+          # 40 lines; the per-algorithm detail stays in the artifact.
+          head -n 40 "$OUT_DIR/self-check.md"
+          echo
+          echo "_Full report: \`$OUT_DIR/self-check.md\` artifact._"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload
+      if: inputs.upload-artifacts == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: cbom-inventory
+        path: |
+          ${{ inputs.out-dir }}/app.cbom.json
+          ${{ inputs.out-dir }}/self-check.md
+          ${{ inputs.out-dir }}/scan.log
+        if-no-files-found: error
+        retention-days: 30
